@@ -1,0 +1,5 @@
+## Interface: 20501
+## Title: Paragons
+## Notes: Tracks XP and levels gained beyond max level
+## Version: 0.1
+Paragons.lua
