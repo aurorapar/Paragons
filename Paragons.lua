@@ -1,3 +1,8 @@
+local ADDON_NAME = "Paragons"
+local ParagonsFrame = CreateFrame("Frame", ADDON_NAME.."_Parent")
+
+local ParagonsFrameX = nil
+local ParagonsFrameY = nil
 
 local MAX_LEVEL = 70
 local lastNotification = 0
@@ -11,6 +16,40 @@ local azerothInstanceIDs = {0, 1, 48, 189, 289, 230, 229, 429, 90, 349, 389, 129
 local outlandsInstanceIDs = {564, 565, 534, 532, 544, 548, 580, 550, 530, 543, 557, 558, 585, 560, 556, 555, 552, 269, 542,
                        553, 554, 540, 547, 545, 546, 1941, 1942, 1943, 1944, 1945, 1946, 1947, 1948, 1949, 1950, 1951,
                        1952, 1953, 1954, 1955, 1956, 1957}
+
+local function getParagonsLevel()
+    if ParagonsLevel == nil then ParagonsLevel = 1 end
+    return ParagonsLevel
+end
+
+local function getParagonsCurrentXP()
+    if ParagonsXP == nil then ParagonsXP = 0 end
+    return ParagonsXP
+end
+
+local function getParagonXPNeeded()
+    return (8 * getParagonsLevel() + 5 * (getParagonsLevel()-30)) * (235 + (5*getParagonsLevel()))
+end
+
+local function updateXPBar(f)
+    if f == nil then f = XPBar end
+    f:SetMinMaxValues(0, getParagonXPNeeded())
+    f:SetValue(getParagonsCurrentXP())
+end
+
+local function CreateBar(name, previous) -- Create StatusBar with a text overlay
+	local f = CreateFrame("StatusBar", ADDON_NAME..name, UIParent, "AnimatedStatusBarTemplate")
+	f:SetFrameStrata("BACKGROUND")
+	f:SetWidth(358)
+	f:SetHeight(15)
+    f:SetPoint("BOTTOM", previous, "BOTTOM")
+    f:SetPoint("LEFT", previous, "LEFT", 5, 0)
+	f:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+	f:SetStatusBarColor(0.58, 0, 0.55)
+	updateXPBar(f)
+	return f
+end
+local XPBar = CreateBar("XPBar", ParagonsFrame)
 
 local function in_array(haystack, needle)
     for k,v in ipairs(haystack) do
@@ -70,24 +109,25 @@ local function getXPReward(levelDifference, eliteCheck)
 end
 
 local function checkLevelUp()
-    local neededXP = (8 * ParagonsLevel + 5 * (ParagonsLevel-30)) * (235 + (5*ParagonsLevel))
-    if ParagonsXP > neededXP then
-        ParagonsLevel = ParagonsLevel + 1
+    local neededXP = getParagonXPNeeded()
+    if getParagonsCurrentXP > neededXP then
+        ParagonsLevel = getParagonsLevel() + 1
         ParagonsXP = ParagonsXP - neededXP
         PlaySound(888);
     end
 end
 
-local function giveParagonXP(xp, reason)
-    if ParagonsLevel == nil then ParagonsLevel = MAX_LEVEL end
-    if ParagonsXP == nil then ParagonsXP = 0 end
+local function giveParagonXP(reward, reason)
+    level = getParagonsLevel()
+    xp = getParagonsCurrentXP()
     reason = reason or "killing a mob"
     if math.floor(GetTime()) - lastNotification > 10 then
         lastNotification = math.floor(GetTime())
-        print("You have earned " .. xp .. " Paragon XP for " .. reason)
+        print("You have earned " .. reward .. " Paragon XP for " .. reason)
     end
 
-    ParagonsXP = ParagonsXP + xp
+    ParagonsXP = xp + reward
+    updateXPBar()
     checkLevelUp()
 
 end
@@ -145,14 +185,78 @@ local function loadStuff()
 
 end
 
-local KillEventFrame = CreateFrame("frame", "EventFrame")
-KillEventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-KillEventFrame:RegisterEvent("ADDON_LOADED")
-KillEventFrame:SetScript("OnEvent", function(self, event)
-    if event == 'COMBAT_LOG_EVENT_UNFILTERED' then
+local function makeFrameMovable(f)
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:SetClampedToScreen(true)
+    f:RegisterForDrag("RightButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+end
+
+local function CreateLeftXPTexture(name, parent)
+    local f = ParagonsFrame:CreateTexture(ADDON_NAME..name, "ARTWORK")
+    f:SetSize(36, 16)
+    if parent == ParagonsFrame then
+        f:SetPoint("LEFT", parent, "LEFT")
+    else
+        f:SetPoint("LEFT", parent, "RIGHT", -4, 0)
+    end
+	f:SetTexture("Interface\\MainMenuBar\\UI-XP-Bar")
+	f:SetTexCoord(11/64,47/64,2/64,18/64)
+	f:Show()
+	return f
+end
+
+local function CreateRightXPTexture(name, parent)
+    local f = ParagonsFrame:CreateTexture(ADDON_NAME..name, "ARTWORK")
+    f:SetSize(19, 28)
+    f:SetPoint("LEFT", parent, "RIGHT", -12, -6)
+	f:SetTexture("Interface\\MainMenuBar\\UI-XP-Bar")
+	f:SetTexCoord(10/64,29/64,20/64,27/36)
+	f:Show()
+	return f
+end
+
+ParagonsFrame:SetPoint("TOP", UIParent, "TOP", 0, -50)
+ParagonsFrame:SetSize(363,15)
+makeFrameMovable(ParagonsFrame)
+ParagonsFrame:SetScript("OnEvent", function(self, event, ...)
+	local unit = ... -- For events starting with UNIT_ the first parameter is the unit
+	if unit ~= "player" then  -- We"re only updating the player status ATM
+		return -- So ignore any other unit
+	end
+	if event == "PLAYER_ENTERING_WORLD" then
+        if ParagonsFrameX == nil then
+            _, _, _, ParagonsFrameX, ParagonsFrameY = ParagonsFrame:GetPoint()
+            print(ADDON_NAME .. " loading")
+        else
+            ParagonsFrame:SetPoint("TOP", UIParent, "TOP", ParagonsFrameX, ParagonsFrameY)
+        end
+    elseif event == "PLAYER_LOGOUT" then
+        _, _, _, ParagonsFrameX, ParagonsFrameY = ParagonsFrame:GetPoint()
+    elseif event == 'COMBAT_LOG_EVENT_UNFILTERED' then
         readCombatLog(CombatLogGetCurrentEventInfo())
     elseif event == 'ADDON_LOADED'  then
         loadStuff()
-    end
+	end
 end)
- "[string "pets=['Infernal', 'Ruljub'] x=UnitName("pet") print(x) for i=1,..."]:1: unexpected symbol near '['"
+
+ParagonsFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+ParagonsFrame:RegisterEvent("PLAYER_LOGOUT")
+ParagonsFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+ParagonsFrame:RegisterEvent("ADDON_LOADED")
+
+local currentParent = CreateLeftXPTexture(ADDON_NAME.."-XP-Bar-Border", ParagonsFrame)
+for i=2,10 do
+    currentParent = CreateLeftXPTexture(ADDON_NAME.."-XP-Bar-Border", currentParent)
+end
+currentParent = CreateRightXPTexture(ADDON_NAME.."-XP-Bar-Border", currentParent)
+
+local function parseCommand(msg, editBox)
+    if (not msg) or type(msg) ~= 'number' then
+        return
+    end
+    giveParagonXP(msg)
+end
+SlashCmdList['PARAGONSCOMMAND'] = parseCommand
