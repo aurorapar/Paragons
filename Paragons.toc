@@ -1,5 +1,9 @@
 ## Interface: 20501
 ## Title: Paragons
-## Notes: Tracks XP and levels gained beyond max level
-## Version: 0.1
+## Notes: Tracks XP and levels that would be gained beyond max level
+## Author: Aurorlock
+## Version: 0.5
+
+## SavedVariablesPerCharacter: ParagonsFrameX, ParagonsFrameY, ParagonsXP
 Paragons.lua
+
